@@ -15,22 +15,36 @@ final class ScrollSyncCoordinator {
     /// Line number for cursor position tracking (status bar only)
     var editorLine: Int = 1
 
-    @ObservationIgnored nonisolated(unsafe) private var lockTimer: Timer?
+    /// Timestamp-based lock to avoid Timer overhead
+    @ObservationIgnored private var lastScrollTime: Date = .distantPast
+    private let lockInterval: TimeInterval = 0.3
+
+    /// Check if the lock from the opposite source is still active
+    private func isOppositeLockActive(_ source: ScrollSource) -> Bool {
+        guard Date().timeIntervalSince(lastScrollTime) < lockInterval else {
+            // Lock expired, reset
+            lastScrollSource = .none
+            return false
+        }
+        // Lock still active, check if it's from the opposite source
+        return (source == .editor && lastScrollSource == .preview) ||
+               (source == .preview && lastScrollSource == .editor)
+    }
 
     /// Called when editor scrolls (real-time scroll event)
     func editorDidScroll(toLine line: Int) {
-        guard lastScrollSource != .preview else { return }
+        guard !isOppositeLockActive(.editor) else { return }
         lastScrollSource = .editor
+        lastScrollTime = Date()
         editorFirstLine = line
-        resetLock()
     }
 
     /// Called when preview reports scroll position
     func previewDidScroll(toLine line: Int) {
-        guard lastScrollSource != .editor else { return }
+        guard !isOppositeLockActive(.preview) else { return }
         lastScrollSource = .preview
+        lastScrollTime = Date()
         previewFirstLine = line
-        resetLock()
     }
 
     /// Called when editor cursor moves (for status bar, not scroll sync)
@@ -38,12 +52,13 @@ final class ScrollSyncCoordinator {
         editorLine = line
     }
 
-    private func resetLock() {
-        lockTimer?.invalidate()
-        lockTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.lastScrollSource = .none
-            }
-        }
+    /// Check if editor-initiated scroll should sync to preview
+    func shouldSyncToPreview() -> Bool {
+        return lastScrollSource == .editor
+    }
+
+    /// Check if preview-initiated scroll should sync to editor
+    func shouldSyncToEditor() -> Bool {
+        return lastScrollSource == .preview
     }
 }

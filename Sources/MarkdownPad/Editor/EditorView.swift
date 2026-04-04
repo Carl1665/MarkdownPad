@@ -29,10 +29,15 @@ struct EditorView: NSViewRepresentable {
         let scrollView = NSScrollView()
         let textView = NSTextView()
 
+        // Apply theme
+        let theme = ThemeManager.shared.editorTheme
+
         // Configure scroll view
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
         scrollView.documentView = textView
 
         // Configure text view
@@ -55,11 +60,22 @@ struct EditorView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
 
-        // Apply theme
-        let theme = ThemeManager.shared.editorTheme
         textView.backgroundColor = theme.background
         textView.insertionPointColor = theme.text
         textView.font = theme.font
+
+        // Set up line numbers ruler view
+        let lineNumbersRuler = LineNumbersRulerView(
+            scrollView: scrollView,
+            orientation: .verticalRuler,
+            textView: textView,
+            theme: theme
+        )
+        scrollView.verticalRulerView = lineNumbersRuler
+        context.coordinator.lineNumbersView = lineNumbersRuler
+
+        // Disable scrollView's default ruler background to use custom theme color
+        scrollView.borderType = .noBorder
 
         // Set up delegate
         textView.delegate = context.coordinator
@@ -120,18 +136,24 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isUpdating = false
         }
 
-        // 始终应用主题（强制更新）
+        // Apply theme colors (these don't affect text attributes)
         let theme = ThemeManager.shared.editorTheme
         textView.backgroundColor = theme.background
         textView.insertionPointColor = theme.text
-        textView.font = theme.font
+        // Note: Don't set textView.font here - it resets all text attributes
+        // Font is handled by the syntax highlighter
 
-        // 重新创建高亮器并应用高亮
-        context.coordinator.highlighter = SyntaxHighlighter(theme: theme)
-        context.coordinator.highlighter?.highlightParagraph(
-            in: textView.textStorage!,
-            editedRange: NSRange(location: 0, length: (textView.string as NSString).length)
-        )
+        // Only re-highlight if theme actually changed
+        if context.coordinator.lastTheme?.background != theme.background ||
+           context.coordinator.lastTheme?.code != theme.code ||
+           context.coordinator.lastTheme?.heading != theme.heading {
+            context.coordinator.lastTheme = theme
+            context.coordinator.highlighter = SyntaxHighlighter(theme: theme)
+            context.coordinator.highlighter?.highlightParagraph(
+                in: textView.textStorage!,
+                editedRange: NSRange(location: 0, length: (textView.string as NSString).length)
+            )
+        }
 
         // Scroll to line (reverse sync: preview → editor)
         if let targetLine = scrollToLine, !context.coordinator.isScrollingFromCode {
@@ -172,8 +194,10 @@ struct EditorView: NSViewRepresentable {
         var parent: EditorView
         var textView: NSTextView?
         var highlighter: SyntaxHighlighter?
+        var lineNumbersView: LineNumbersRulerView?
         var isUpdating = false
         var isScrollingFromCode = false
+        var lastTheme: EditorTheme?  // Cache for theme change detection
 
         init(_ parent: EditorView) {
             self.parent = parent
@@ -204,9 +228,19 @@ struct EditorView: NSViewRepresentable {
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
             // Count newlines up to charIndex to determine line number (1-based)
-            let head = (textView.string as NSString).substring(to: min(charIndex, (textView.string as NSString).length))
-            let lineNumber = max(head.components(separatedBy: "\n").count, 1)
-            parent.onFirstVisibleLine?(lineNumber)
+            // Optimized: count newlines directly instead of creating an array
+            let string = textView.string as NSString
+            let safeIndex = min(charIndex, string.length)
+            var lineCount = 1
+            for i in 0..<safeIndex {
+                if string.character(at: i) == 10 { // newline
+                    lineCount += 1
+                }
+            }
+            parent.onFirstVisibleLine?(lineCount)
+
+            // Redraw line numbers on scroll
+            lineNumbersView?.needsDisplay = true
         }
 
         deinit {
@@ -236,6 +270,9 @@ struct EditorView: NSViewRepresentable {
                     self.highlighter?.highlightParagraph(in: textStorage, editedRange: NSRange(location: 0, length: newText.count))
                 }
             }
+
+            // Redraw line numbers on text change
+            lineNumbersView?.needsDisplay = true
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {

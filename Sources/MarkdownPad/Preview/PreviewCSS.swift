@@ -189,39 +189,95 @@ enum PreviewCSS {
     <body>
     <div id="content"></div>
     <script>
+    // Cache for elements with source line data
+    var _lineElements = null;
+    var _lineMap = null;
+
     function updateContent(html) {
-        document.getElementById('content').innerHTML = html;
+        var contentEl = document.getElementById('content');
+        contentEl.innerHTML = html;
+        // Invalidate caches when content changes
+        _lineElements = null;
+        _lineMap = null;
     }
+
+    function getLineElements() {
+        if (_lineElements === null) {
+            _lineElements = Array.from(document.querySelectorAll('[data-source-line]'));
+        }
+        return _lineElements;
+    }
+
+    // Build a map from line number to element for fast lookup
+    function buildLineMap() {
+        if (_lineMap === null) {
+            _lineMap = new Map();
+            var elements = getLineElements();
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var line = parseInt(el.getAttribute('data-source-line'), 10);
+                // Later elements override earlier ones (for nested structures)
+                _lineMap.set(line, el);
+            }
+        }
+        return _lineMap;
+    }
+
     function scrollToLine(line) {
-        var elements = document.querySelectorAll('[data-source-line]');
-        var target = null;
-        for (var i = 0; i < elements.length; i++) {
-            var elLine = parseInt(elements[i].getAttribute('data-source-line'), 10);
-            if (elLine <= line) {
-                target = elements[i];
-            } else {
-                break;
-            }
-        }
-        if (target) {
+        // Fast path: exact match using line map
+        var map = buildLineMap();
+        if (map.has(line)) {
+            var el = map.get(line);
             window._isScrollingFromEditor = true;
-            window.scrollTo({ top: target.offsetTop, behavior: 'auto' });
+            window.scrollTo({ top: el.offsetTop, behavior: 'auto' });
             setTimeout(function() { window._isScrollingFromEditor = false; }, 50);
+            return;
         }
-    }
-    function getFirstVisibleLine() {
-        var elements = document.querySelectorAll('[data-source-line]');
-        for (var i = 0; i < elements.length; i++) {
-            var rect = elements[i].getBoundingClientRect();
-            if (rect.top >= 0) {
-                return parseInt(elements[i].getAttribute('data-source-line'), 10);
+
+        // Fallback: binary search for closest element
+        var elements = getLineElements();
+        if (elements.length === 0) return;
+
+        var left = 0, right = elements.length - 1;
+        var target = elements[0];
+
+        while (left <= right) {
+            var mid = Math.floor((left + right) / 2);
+            var elLine = parseInt(elements[mid].getAttribute('data-source-line'), 10);
+            if (elLine <= line) {
+                target = elements[mid];
+                left = mid + 1;
+            } else {
+                right = mid - 1;
             }
         }
-        if (elements.length > 0) {
-            return parseInt(elements[elements.length - 1].getAttribute('data-source-line'), 10);
-        }
-        return 1;
+
+        window._isScrollingFromEditor = true;
+        window.scrollTo({ top: target.offsetTop, behavior: 'auto' });
+        setTimeout(function() { window._isScrollingFromEditor = false; }, 50);
     }
+
+    function getFirstVisibleLine() {
+        var elements = getLineElements();
+        if (elements.length === 0) return 1;
+
+        // Binary search for first visible element
+        var left = 0, right = elements.length - 1;
+        var result = 1;
+
+        while (left <= right) {
+            var mid = Math.floor((left + right) / 2);
+            var rect = elements[mid].getBoundingClientRect();
+            if (rect.top >= 0) {
+                result = parseInt(elements[mid].getAttribute('data-source-line'), 10);
+                right = mid - 1;
+            } else {
+                left = mid + 1;
+            }
+        }
+        return result;
+    }
+
     let scrollTimer = null;
     window.addEventListener('scroll', function() {
         if (window._isScrollingFromEditor) return;

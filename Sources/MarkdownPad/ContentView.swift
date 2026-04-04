@@ -360,7 +360,7 @@ struct EditorPreviewPair: View {
             leftContent: {
                 EditorView(
                     text: $doc.text,
-                    scrollToLine: scrollSync.lastScrollSource == .preview ? scrollSync.previewFirstLine : nil,
+                    scrollToLine: scrollSync.shouldSyncToEditor() ? scrollSync.previewFirstLine : nil,
                     onCursorMove: { line, column in
                         cursorLine = line
                         cursorColumn = column
@@ -382,7 +382,7 @@ struct EditorPreviewPair: View {
             rightContent: {
                 PreviewView(
                     html: parsedHTML,
-                    scrollToLine: scrollSync.lastScrollSource == .editor ? scrollSync.editorFirstLine : nil,
+                    scrollToLine: scrollSync.shouldSyncToPreview() ? scrollSync.editorFirstLine : nil,
                     onFirstVisibleLine: { line in
                         scrollSync.previewDidScroll(toLine: line)
                     }

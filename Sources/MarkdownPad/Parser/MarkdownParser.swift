@@ -64,11 +64,24 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
-        let line = sourceLine(codeBlock)
+        let startLine = sourceLine(codeBlock)
         let lang = codeBlock.language ?? ""
         let langAttr = lang.isEmpty ? "" : " class=\"language-\(lang)\""
         let code = escapeHTML(codeBlock.code)
-        return "<pre data-source-line=\"\(line)\"><code\(langAttr)>\(code)</code></pre>"
+
+        // 为每行生成带行号的 span，实现行级滚动同步
+        let lines = code.components(separatedBy: "\n")
+        var lineSpans: [String] = []
+
+        for (index, lineContent) in lines.enumerated() {
+            // 跳过最后一个空行（代码块末尾换行产生的空元素）
+            if index == lines.count - 1 && lineContent.isEmpty { break }
+            let lineNumber = startLine + index
+            lineSpans.append("<span data-source-line=\"\(lineNumber)\">\(lineContent)</span>")
+        }
+
+        let wrappedCode = lineSpans.joined(separator: "\n")
+        return "<pre data-source-line=\"\(startLine)\"><code\(langAttr)>\(wrappedCode)</code></pre>"
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
