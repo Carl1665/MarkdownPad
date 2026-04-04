@@ -10,9 +10,12 @@ struct EditorTheme {
     let code: NSColor
     let codeBackground: NSColor
     let link: NSColor
+    let linkUrl: NSColor
     let listMarker: NSColor
     let blockquoteMarker: NSColor
     let horizontalRule: NSColor
+    let tablePipe: NSColor
+    let comment: NSColor
 
     let font: NSFont
     let codeFont: NSFont
@@ -23,66 +26,56 @@ struct EditorTheme {
 final class ThemeManager {
     static let shared = ThemeManager()
 
-    var isDarkMode: Bool = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    // 编辑器始终使用深色主题（印象笔记风格）
+    var editorTheme: EditorTheme { Self.evernoteDarkEditor }
 
-    var editorTheme: EditorTheme {
-        isDarkMode ? Self.darkEditor : Self.lightEditor
-    }
+    private init() {}
+}
 
-    @ObservationIgnored nonisolated(unsafe) private var appearanceObserver: NSObjectProtocol?
+// MARK: - 印象笔记风格深色主题
 
-    private init() {
-        appearanceObserver = DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            }
-        }
-    }
-
-    deinit {
-        if let observer = appearanceObserver {
-            DistributedNotificationCenter.default().removeObserver(observer)
-        }
-    }
-
-    // MARK: - Light Theme
-
-    static let lightEditor = EditorTheme(
-        background: .white,
-        text: NSColor(red: 0.13, green: 0.13, blue: 0.13, alpha: 1),
-        heading: NSColor(red: 0.15, green: 0.35, blue: 0.65, alpha: 1),
-        bold: NSColor(red: 0.13, green: 0.13, blue: 0.13, alpha: 1),
-        italic: NSColor(red: 0.35, green: 0.35, blue: 0.35, alpha: 1),
-        code: NSColor(red: 0.78, green: 0.36, blue: 0.15, alpha: 1),
-        codeBackground: NSColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1),
-        link: NSColor(red: 0.20, green: 0.45, blue: 0.75, alpha: 1),
-        listMarker: NSColor(red: 0.45, green: 0.45, blue: 0.45, alpha: 1),
-        blockquoteMarker: NSColor(red: 0.60, green: 0.60, blue: 0.60, alpha: 1),
-        horizontalRule: NSColor(red: 0.80, green: 0.80, blue: 0.80, alpha: 1),
-        font: NSFont(name: "PingFangSC-Regular", size: 15) ?? .systemFont(ofSize: 15),
+extension ThemeManager {
+    /// 印象笔记 Markdown 编辑器深色主题
+    /// 基于 https://evernote.com 截图逆向提取
+    static let evernoteDarkEditor = EditorTheme(
+        background: NSColor(hex: "#2B2D30")!,      // 深炭灰
+        text: NSColor(hex: "#D4D4D4")!,            // 浅灰白
+        heading: NSColor(hex: "#8EC86A")!,         // 亮草绿
+        bold: NSColor(hex: "#D7BA7D")!,            // 金黄色
+        italic: NSColor(hex: "#D4D4D4")!,          // 默认色
+        code: NSColor(hex: "#CE9178")!,            // 暖橙色
+        codeBackground: NSColor(hex: "#1E1E1E")!,  // 更深灰
+        link: NSColor(hex: "#569CD6")!,            // 蓝色
+        linkUrl: NSColor(hex: "#CE9178")!,         // 暖橙色
+        listMarker: NSColor(hex: "#D4D4D4")!,      // 默认色
+        blockquoteMarker: NSColor(hex: "#6A9955")!, // 暗绿色
+        horizontalRule: NSColor(hex: "#E8853D")!,  // 橙红色
+        tablePipe: NSColor(hex: "#808080")!,       // 灰色
+        comment: NSColor(hex: "#6A9955")!,         // 暗绿色
+        font: NSFont(name: "Menlo", size: 14) ?? .monospacedSystemFont(ofSize: 14, weight: .regular),
         codeFont: NSFont(name: "Menlo", size: 14) ?? .monospacedSystemFont(ofSize: 14, weight: .regular),
         lineHeight: 1.6
     )
+}
 
-    // MARK: - Dark Theme
+// MARK: - NSColor Hex Extension
 
-    static let darkEditor = EditorTheme(
-        background: NSColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1),
-        text: NSColor(red: 0.85, green: 0.85, blue: 0.85, alpha: 1),
-        heading: NSColor(red: 0.45, green: 0.65, blue: 0.90, alpha: 1),
-        bold: NSColor(red: 0.90, green: 0.90, blue: 0.90, alpha: 1),
-        italic: NSColor(red: 0.70, green: 0.70, blue: 0.70, alpha: 1),
-        code: NSColor(red: 0.90, green: 0.55, blue: 0.30, alpha: 1),
-        codeBackground: NSColor(red: 0.20, green: 0.20, blue: 0.20, alpha: 1),
-        link: NSColor(red: 0.40, green: 0.65, blue: 0.95, alpha: 1),
-        listMarker: NSColor(red: 0.55, green: 0.55, blue: 0.55, alpha: 1),
-        blockquoteMarker: NSColor(red: 0.50, green: 0.50, blue: 0.50, alpha: 1),
-        horizontalRule: NSColor(red: 0.35, green: 0.35, blue: 0.35, alpha: 1),
-        font: NSFont(name: "PingFangSC-Regular", size: 15) ?? .systemFont(ofSize: 15),
-        codeFont: NSFont(name: "Menlo", size: 14) ?? .monospacedSystemFont(ofSize: 14, weight: .regular),
-        lineHeight: 1.6
-    )
+extension NSColor {
+    convenience init?(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        guard Scanner(string: hex).scanHexInt64(&int) else { return nil }
+
+        let r, g, b: UInt64
+        switch hex.count {
+        case 6:
+            r = (int >> 16) & 0xFF
+            g = (int >> 8) & 0xFF
+            b = int & 0xFF
+        default:
+            return nil
+        }
+
+        self.init(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
+    }
 }

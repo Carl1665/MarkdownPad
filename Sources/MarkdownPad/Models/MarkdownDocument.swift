@@ -8,6 +8,7 @@ final class MarkdownDocument: Identifiable {
     var fileURL: URL?
     var isDirty: Bool = false
     var encoding: String.Encoding = .utf8
+    var autoSaveError: ((Error) -> Void)?
 
     @ObservationIgnored nonisolated(unsafe) private var autoSaveTimer: Timer?
 
@@ -34,7 +35,11 @@ final class MarkdownDocument: Identifiable {
         autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isDirty, self.fileURL != nil else { return }
-                try? self.save()
+                do {
+                    try self.save()
+                } catch {
+                    self.autoSaveError?(error)
+                }
             }
         }
     }
@@ -43,8 +48,25 @@ final class MarkdownDocument: Identifiable {
 
     static func open(url: URL) throws -> MarkdownDocument {
         let data = try Data(contentsOf: url)
-        let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) ?? ""
+
+        // Detect encoding: try UTF-8 first, then fall back to common encodings
+        var detectedEncoding: String.Encoding = .utf8
+
+        if String(data: data, encoding: .utf8) != nil {
+            detectedEncoding = .utf8
+        } else {
+            // Try common encodings
+            for enc in [String.Encoding.isoLatin1, String.Encoding.windowsCP1252, String.Encoding.macOSRoman] {
+                if String(data: data, encoding: enc) != nil {
+                    detectedEncoding = enc
+                    break
+                }
+            }
+        }
+
+        let text = String(data: data, encoding: detectedEncoding) ?? ""
         let doc = MarkdownDocument(text: text, fileURL: url)
+        doc.encoding = detectedEncoding
         doc.isDirty = false
         return doc
     }

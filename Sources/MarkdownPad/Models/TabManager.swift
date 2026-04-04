@@ -4,6 +4,10 @@ import SwiftUI
 final class TabManager {
     var documents: [MarkdownDocument] = []
     var activeDocument: MarkdownDocument?
+    var errorMessage: String?
+
+    // 用于保存确认的文档引用
+    var documentToClose: MarkdownDocument?
 
     func newDocument() {
         let doc = MarkdownDocument()
@@ -37,5 +41,13 @@ final class TabManager {
 
     func moveDocument(from source: IndexSet, to destination: Int) {
         documents.move(fromOffsets: source, toOffset: destination)
+    }
+
+    func showError(_ message: String) {
+        errorMessage = message
+    }
+
+    func dismissError() {
+        errorMessage = nil
     }
 }

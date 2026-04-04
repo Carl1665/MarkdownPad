@@ -4,6 +4,19 @@ import os.log
 
 private let logger = Logger(subsystem: "com.markdownpad", category: "EditorView")
 
+// 全局保存当前活动的 textView 引用
+@MainActor
+final class ActiveTextView {
+    static let shared = ActiveTextView()
+    private(set) var textView: NSTextView?
+
+    private init() {}
+
+    func setTextView(_ textView: NSTextView?) {
+        self.textView = textView
+    }
+}
+
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var scrollToLine: Int?
@@ -31,6 +44,12 @@ struct EditorView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+        textView.usesFontPanel = false
+
+        // 设置查找相关配置
+        textView.isAutomaticTextCompletionEnabled = true
+        textView.allowsDocumentBackgroundColorChange = false
 
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.autoresizingMask = [.width]
@@ -48,6 +67,9 @@ struct EditorView: NSViewRepresentable {
         // Store reference for updates
         context.coordinator.textView = textView
         context.coordinator.highlighter = SyntaxHighlighter(theme: theme)
+
+        // 保存到全局引用
+        ActiveTextView.shared.setTextView(textView)
 
         // Notify parent that textView is ready
         onTextViewReady?(textView)
@@ -68,12 +90,13 @@ struct EditorView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
-        // Make textView first responder when window becomes key
-        DispatchQueue.main.async {
-            if let window = scrollView.window {
-                window.makeFirstResponder(textView)
-            }
-        }
+        // 监听查找命令
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleFindAction(_:)),
+            name: .findAction,
+            object: nil
+        )
 
         return scrollView
     }
@@ -97,17 +120,18 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isUpdating = false
         }
 
-        // Update theme if changed — rebuild highlighter and re-highlight
+        // 始终应用主题（强制更新）
         let theme = ThemeManager.shared.editorTheme
-        if textView.backgroundColor != theme.background {
-            textView.backgroundColor = theme.background
-            textView.insertionPointColor = theme.text
-            context.coordinator.highlighter = SyntaxHighlighter(theme: theme)
-            context.coordinator.highlighter?.highlightParagraph(
-                in: textView.textStorage!,
-                editedRange: NSRange(location: 0, length: (textView.string as NSString).length)
-            )
-        }
+        textView.backgroundColor = theme.background
+        textView.insertionPointColor = theme.text
+        textView.font = theme.font
+
+        // 重新创建高亮器并应用高亮
+        context.coordinator.highlighter = SyntaxHighlighter(theme: theme)
+        context.coordinator.highlighter?.highlightParagraph(
+            in: textView.textStorage!,
+            editedRange: NSRange(location: 0, length: (textView.string as NSString).length)
+        )
 
         // Scroll to line (reverse sync: preview → editor)
         if let targetLine = scrollToLine, !context.coordinator.isScrollingFromCode {
@@ -153,6 +177,18 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        @MainActor @objc func handleFindAction(_ notification: Notification) {
+            guard let textView = textView,
+                  let action = notification.object as? Int else { return }
+
+            // 确保 textView 是 firstResponder
+            if let window = textView.window, window.firstResponder !== textView {
+                window.makeFirstResponder(textView)
+            }
+
+            textView.performFindPanelAction(NSFindPanelAction(rawValue: UInt(action)) ?? .showFindPanel)
         }
 
         @MainActor @objc func scrollViewDidScroll(_ notification: Notification) {

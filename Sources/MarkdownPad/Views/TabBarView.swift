@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct TabBarView: View {
     @Bindable var tabManager: TabManager
@@ -13,7 +14,7 @@ struct TabBarView: View {
                             isDirty: doc.isDirty,
                             isActive: tabManager.activeDocument?.id == doc.id,
                             onSelect: { tabManager.activeDocument = doc },
-                            onClose: { tabManager.closeDocument(doc) }
+                            onClose: { requestClose(doc) }
                         )
                     }
                 }
@@ -31,6 +32,53 @@ struct TabBarView: View {
         }
         .frame(height: 36)
         .background(.bar)
+    }
+
+    private func requestClose(_ doc: MarkdownDocument) {
+        if doc.isDirty {
+            showCloseConfirmation(for: doc)
+        } else {
+            tabManager.closeDocument(doc)
+        }
+    }
+
+    private func showCloseConfirmation(for doc: MarkdownDocument) {
+        let alert = NSAlert()
+        alert.messageText = "是否保存更改？"
+        alert.informativeText = "文档 \"\(doc.displayName)\" 有未保存的更改。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:  // 保存
+            if doc.fileURL != nil {
+                do {
+                    try doc.save()
+                    tabManager.closeDocument(doc)
+                } catch {
+                    tabManager.showError("保存失败：\(error.localizedDescription)")
+                }
+            } else {
+                // 显示保存面板
+                let panel = NSSavePanel()
+                panel.allowedContentTypes = [.init(filenameExtension: "md")!]
+                panel.nameFieldStringValue = doc.displayName + ".md"
+                if panel.runModal() == .OK, let url = panel.url {
+                    do {
+                        try doc.save(to: url)
+                        tabManager.closeDocument(doc)
+                    } catch {
+                        tabManager.showError("保存失败：\(error.localizedDescription)")
+                    }
+                }
+            }
+        case .alertSecondButtonReturn:  // 不保存
+            tabManager.closeDocument(doc)
+        default:  // 取消
+            break
+        }
     }
 }
 

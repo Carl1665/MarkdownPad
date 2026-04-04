@@ -1,8 +1,75 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import os.log
 
 private let logger = Logger(subsystem: "com.markdownpad", category: "ContentView")
+
+private let welcomeContent = """
+# 欢迎使用 MarkdownPad
+
+这是一个 **Markdown** 编辑器，支持实时预览。
+
+## 基本语法
+
+### 文本格式
+
+- **加粗**: 使用双星号 `**文字**`
+- *斜体*: 使用单星号 `*文字*`
+- `代码`: 使用反引号
+
+### 标题
+
+使用 `#` 号表示标题级别：
+
+```
+# H1 标题
+## H2 标题
+### H3 标题
+```
+
+### 列表
+
+无序列表：
+- 项目一
+- 项目二
+- 项目三
+
+有序列表：
+1. 第一步
+2. 第二步
+3. 第三步
+
+### 代码块
+
+```swift
+func hello() {
+    print("Hello, World!")
+}
+```
+
+### 引用
+
+> 这是一段引用文字
+> 可以有多行
+
+### 链接和图片
+
+[链接文字](https://example.com)
+
+![图片描述](image.png)
+
+### 表格
+
+| 列1 | 列2 | 列3 |
+|-----|-----|-----|
+| A   | B   | C   |
+| D   | E   | F   |
+
+---
+
+开始编辑吧！
+"""
 
 struct ContentView: View {
     @State private var tabManager = TabManager()
@@ -11,6 +78,7 @@ struct ContentView: View {
     @State private var cursorColumn: Int = 1
     @State private var wordCount: Int = 0
     @State private var editorTextView: NSTextView?
+    @State private var pendingCloseDoc: MarkdownDocument?  // 等待确认关闭的文档
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +116,7 @@ struct ContentView: View {
 
             // Status bar
             StatusBarView(
+                documentName: tabManager.activeDocument?.displayName,
                 line: cursorLine,
                 column: cursorColumn,
                 wordCount: wordCount,
@@ -55,9 +124,18 @@ struct ContentView: View {
             )
         }
         .focusedSceneValue(\.activeTabManager, tabManager)
+        .frame(minWidth: Constants.Window.minWidth, minHeight: Constants.Window.minHeight)
         .onAppear {
             if tabManager.documents.isEmpty {
-                tabManager.newDocument()
+                // Check if first run
+                if !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.hasLaunchedBefore) {
+                    UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.hasLaunchedBefore)
+                    // Show welcome document with Markdown examples
+                    let welcomeDoc = MarkdownDocument(text: welcomeContent)
+                    tabManager.addDocument(welcomeDoc)
+                } else {
+                    tabManager.newDocument()
+                }
             }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -66,8 +144,12 @@ struct ContentView: View {
                     guard let url = url,
                           ["md", "markdown"].contains(url.pathExtension.lowercased()) else { return }
                     DispatchQueue.main.async {
-                        if let doc = try? MarkdownDocument.open(url: url) {
+                        do {
+                            let doc = try MarkdownDocument.open(url: url)
                             tabManager.addDocument(doc)
+                            RecentFilesManager.shared.addFile(url)
+                        } catch {
+                            tabManager.showError(ErrorMessage.cannotOpenFile(url.lastPathComponent, error: error))
                         }
                     }
                 }
@@ -79,14 +161,117 @@ struct ContentView: View {
                 handleToolbarAction(action)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .requestCloseDocument)) { notification in
+            if let doc = notification.object as? MarkdownDocument {
+                pendingCloseDoc = doc
+                showSaveConfirmDialog(for: doc)
+            }
+        }
+        .alert("错误", isPresented: Binding(
+            get: { tabManager.errorMessage != nil },
+            set: { if !$0 { tabManager.dismissError() } }
+        )) {
+            Button("确定", role: .cancel) {
+                tabManager.dismissError()
+            }
+        } message: {
+            Text(tabManager.errorMessage ?? "发生未知错误")
+        }
+    }
+
+    private func showSaveConfirmDialog(for doc: MarkdownDocument) {
+        let alert = NSAlert()
+        alert.messageText = "是否保存更改？"
+        alert.informativeText = "文档 \"\(doc.displayName)\" 有未保存的更改。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+
+        let response = alert.runModal()
+        pendingCloseDoc = nil
+
+        switch response {
+        case .alertFirstButtonReturn:  // 保存
+            handleSaveAndClose(doc: doc)
+        case .alertSecondButtonReturn:  // 不保存
+            tabManager.closeDocument(doc)
+        default:  // 取消
+            break
+        }
+    }
+
+    private func handleSaveAndClose(doc: MarkdownDocument) {
+        if doc.fileURL != nil {
+            do {
+                try doc.save()
+                tabManager.closeDocument(doc)
+            } catch {
+                tabManager.showError(ErrorMessage.saveFailed(error))
+            }
+        } else {
+            // Show save panel for untitled document
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = Constants.markdownContentTypes
+            panel.nameFieldStringValue = doc.displayName + ".md"
+            if panel.runModal() == .OK, let url = panel.url {
+                do {
+                    try doc.save(to: url)
+                    tabManager.closeDocument(doc)
+                } catch {
+                    tabManager.showError(ErrorMessage.saveFailed(error))
+                }
+            }
+        }
     }
 
     private var emptyState: some View {
-        VStack {
-            Text("打开或新建一个 Markdown 文档")
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text")
+                .font(.system(size: Constants.EmptyState.iconSize))
                 .foregroundStyle(.secondary)
+
+            Text("MarkdownPad")
+                .font(.title2)
+                .fontWeight(.medium)
+
+            Text("打开或新建一个 Markdown 文档开始编辑")
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                Button("新建文档") {
+                    tabManager.newDocument()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("打开文件...") {
+                    openFile()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text("或将 .md 文件拖拽到窗口中")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.clear)
+    }
+
+    private func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = Constants.markdownContentTypes
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            do {
+                let doc = try MarkdownDocument.open(url: url)
+                tabManager.addDocument(doc)
+            } catch {
+                tabManager.showError(ErrorMessage.cannotOpenFile(url.lastPathComponent, error: error))
+            }
+        }
     }
 
     // MARK: - Toolbar Actions (insert at cursor via NSTextView)
@@ -171,39 +356,41 @@ struct EditorPreviewPair: View {
     @State private var parsedHTML: String = ""
 
     var body: some View {
-        HSplitView {
-            EditorView(
-                text: $doc.text,
-                scrollToLine: scrollSync.lastScrollSource == .preview ? scrollSync.previewFirstLine : nil,
-                onCursorMove: { line, column in
-                    cursorLine = line
-                    cursorColumn = column
-                    scrollSync.editorCursorMoved(toLine: line)
-                },
-                onFirstVisibleLine: { line in
-                    scrollSync.editorDidScroll(toLine: line)
-                },
-                onTextChange: { newText in
-                    logger.debug("onTextChange callback, posting notification")
-                    // Post notification - this bypasses struct capture issues
-                    NotificationCenter.default.post(
-                        name: .editorTextDidChange,
-                        object: newText
-                    )
-                },
-                onTextViewReady: onTextViewReady
-            )
-            .frame(minWidth: 300)
-
-            PreviewView(
-                html: parsedHTML,
-                scrollToLine: scrollSync.lastScrollSource == .editor ? scrollSync.editorFirstLine : nil,
-                onFirstVisibleLine: { line in
-                    scrollSync.previewDidScroll(toLine: line)
-                }
-            )
-            .frame(minWidth: 300)
-        }
+        PersistentSplitView(
+            leftContent: {
+                EditorView(
+                    text: $doc.text,
+                    scrollToLine: scrollSync.lastScrollSource == .preview ? scrollSync.previewFirstLine : nil,
+                    onCursorMove: { line, column in
+                        cursorLine = line
+                        cursorColumn = column
+                        scrollSync.editorCursorMoved(toLine: line)
+                    },
+                    onFirstVisibleLine: { line in
+                        scrollSync.editorDidScroll(toLine: line)
+                    },
+                    onTextChange: { newText in
+                        logger.debug("onTextChange callback, posting notification")
+                        NotificationCenter.default.post(
+                            name: .editorTextDidChange,
+                            object: newText
+                        )
+                    },
+                    onTextViewReady: onTextViewReady
+                )
+            },
+            rightContent: {
+                PreviewView(
+                    html: parsedHTML,
+                    scrollToLine: scrollSync.lastScrollSource == .editor ? scrollSync.editorFirstLine : nil,
+                    onFirstVisibleLine: { line in
+                        scrollSync.previewDidScroll(toLine: line)
+                    }
+                )
+            },
+            leftMinWidth: 300,
+            rightMinWidth: 300
+        )
         .onAppear {
             updatePreview(text: doc.text)
         }
@@ -236,6 +423,8 @@ struct EditorPreviewPair: View {
 
 extension Notification.Name {
     static let editorTextDidChange = Notification.Name("editorTextDidChange")
+    static let requestCloseDocument = Notification.Name("requestCloseDocument")
+    static let findAction = Notification.Name("findAction")
 }
 
 // MARK: - FocusedValues

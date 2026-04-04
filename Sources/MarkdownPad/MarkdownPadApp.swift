@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 @main
 struct MarkdownPadApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.activeTabManager) var tabManager
 
     var body: some Scene {
@@ -30,9 +31,16 @@ struct MarkdownPadApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(tabManager?.activeDocument == nil)
-            }
 
-            CommandGroup(replacing: .toolbar) {
+                Button("另存为...") {
+                    saveActiveDocumentAs()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(tabManager?.activeDocument == nil)
+
+                Divider()
+
+                // 关闭标签页 - 替代系统的关闭窗口
                 Button("关闭标签页") {
                     closeActiveTab()
                 }
@@ -41,6 +49,25 @@ struct MarkdownPadApp: App {
 
                 Divider()
 
+                // Recent files menu
+                Menu("最近文件") {
+                    ForEach(RecentFilesManager.shared.recentFiles, id: \.self) { url in
+                        Button(url.lastPathComponent) {
+                            openRecentFile(url)
+                        }
+                    }
+
+                    if !RecentFilesManager.shared.recentFiles.isEmpty {
+                        Divider()
+                        Button("清除最近文件") {
+                            RecentFilesManager.shared.clearRecentFiles()
+                        }
+                    }
+                }
+                .disabled(RecentFilesManager.shared.recentFiles.isEmpty)
+            }
+
+            CommandGroup(replacing: .toolbar) {
                 Button("上一个标签页") {
                     switchTab(offset: -1)
                 }
@@ -52,6 +79,25 @@ struct MarkdownPadApp: App {
                 }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
                 .disabled(tabManager == nil || (tabManager?.documents.count ?? 0) < 2)
+            }
+
+            // 查找命令 - 使用 textEditing 位置
+            CommandGroup(after: .textEditing) {
+                Button("查找...") {
+                    NSLog("DEBUG: Find menu item clicked")
+                    performFindAction(.showFindPanel)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Button("查找下一个") {
+                    performFindAction(.next)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+
+                Button("查找上一个") {
+                    performFindAction(.previous)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
             CommandMenu("格式") {
@@ -75,49 +121,119 @@ struct MarkdownPadApp: App {
 
     private func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "md"), UTType(filenameExtension: "markdown")].compactMap { $0 }
+        panel.allowedContentTypes = Constants.markdownContentTypes
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            if let doc = try? MarkdownDocument.open(url: url) {
+            do {
+                let doc = try MarkdownDocument.open(url: url)
                 tabManager?.addDocument(doc)
+                RecentFilesManager.shared.addFile(url)
+            } catch {
+                tabManager?.showError(ErrorMessage.cannotOpenFile(url.lastPathComponent, error: error))
             }
+        }
+    }
+
+    private func openRecentFile(_ url: URL) {
+        do {
+            let doc = try MarkdownDocument.open(url: url)
+            tabManager?.addDocument(doc)
+            RecentFilesManager.shared.addFile(url)
+        } catch {
+            tabManager?.showError(ErrorMessage.cannotOpenFile(url.lastPathComponent, error: error))
         }
     }
 
     private func saveActiveDocument() {
         guard let doc = tabManager?.activeDocument else { return }
         if doc.fileURL != nil {
-            try? doc.save()
+            do {
+                try doc.save()
+            } catch {
+                tabManager?.showError(ErrorMessage.saveFailed(error))
+            }
         } else {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [UTType(filenameExtension: "md")].compactMap { $0 }
-            panel.nameFieldStringValue = "Untitled.md"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            try? doc.save(to: url)
+            saveActiveDocumentAs()
+        }
+    }
+
+    private func saveActiveDocumentAs() {
+        guard let doc = tabManager?.activeDocument else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = Constants.markdownContentTypes
+        panel.nameFieldStringValue = doc.fileURL?.lastPathComponent ?? "Untitled.md"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try doc.save(to: url)
+            RecentFilesManager.shared.addFile(url)
+        } catch {
+            tabManager?.showError(ErrorMessage.saveFailed(error))
         }
     }
 
     private func closeActiveTab() {
         guard let doc = tabManager?.activeDocument else { return }
+
         if doc.isDirty {
-            let alert = NSAlert()
-            alert.messageText = "是否保存更改？"
-            alert.addButton(withTitle: "保存")
-            alert.addButton(withTitle: "不保存")
-            alert.addButton(withTitle: "取消")
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                saveActiveDocument()
-                tabManager?.closeDocument(doc)
-            } else if response == .alertSecondButtonReturn {
-                tabManager?.closeDocument(doc)
-            }
+            showCloseConfirmation(for: doc)
         } else {
             tabManager?.closeDocument(doc)
         }
+    }
+
+    private func showCloseConfirmation(for doc: MarkdownDocument) {
+        let alert = NSAlert()
+        alert.messageText = "是否保存更改？"
+        alert.informativeText = "文档 \"\(doc.displayName)\" 有未保存的更改。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:  // 保存
+            if doc.fileURL != nil {
+                do {
+                    try doc.save()
+                    tabManager?.closeDocument(doc)
+                } catch {
+                    tabManager?.showError("保存失败：\(error.localizedDescription)")
+                }
+            } else {
+                let panel = NSSavePanel()
+                panel.allowedContentTypes = Constants.markdownContentTypes
+                panel.nameFieldStringValue = doc.displayName + ".md"
+                if panel.runModal() == .OK, let url = panel.url {
+                    do {
+                        try doc.save(to: url)
+                        tabManager?.closeDocument(doc)
+                    } catch {
+                        tabManager?.showError("保存失败：\(error.localizedDescription)")
+                    }
+                }
+            }
+        case .alertSecondButtonReturn:  // 不保存
+            tabManager?.closeDocument(doc)
+        default:  // 取消
+            break
+        }
+    }
+
+    private func performFindAction(_ action: NSFindPanelAction) {
+        guard let textView = ActiveTextView.shared.textView else {
+            return
+        }
+
+        // 确保 textView 是 firstResponder
+        textView.window?.makeFirstResponder(textView)
+
+        // 使用 NSApp.sendAction 通过响应链发送查找操作
+        let sender = NSButton()
+        sender.tag = Int(action.rawValue)
+        NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: sender)
     }
 
     private func switchTab(offset: Int) {

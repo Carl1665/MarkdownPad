@@ -5,105 +5,185 @@ enum PreviewCSS {
     <head>
     <meta charset="utf-8">
     <style>
+    /* 印象笔记 Markdown 预览区样式 */
     :root {
-        --text: #212121;
-        --bg: #ffffff;
-        --heading: #1a3a5c;
-        --link: #2a6496;
-        --code-bg: #f5f5f5;
-        --code-text: #c7500f;
-        --border: #e0e0e0;
-        --blockquote-border: #d0d0d0;
-        --blockquote-text: #555;
-        --table-stripe: #f9f9f9;
+        --bg: #FFFFFF;
+        --text: #333333;
+        --heading: #1A1A1A;
+        --link: #2F73B3;
+        --code-fg: #C7254E;
+        --code-bg: #F3F3F3;
+        --codeblock-bg: #F6F6F6;
+        --blockquote-bg: #F7F7F7;
+        --blockquote-bar: #CCCCCC;
+        --table-border: #DDDDDD;
+        --table-header: #F0F0F0;
+        --hr: #DDDDDD;
+        --highlight-bg: #FFF3B0;
     }
-    @media (prefers-color-scheme: dark) {
-        :root {
-            --text: #d4d4d4;
-            --bg: #1e1e1e;
-            --heading: #6fa3d6;
-            --link: #5a9fd4;
-            --code-bg: #2a2a2a;
-            --code-text: #e09050;
-            --border: #3a3a3a;
-            --blockquote-border: #444;
-            --blockquote-text: #999;
-            --table-stripe: #252525;
-        }
-    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-        font-family: -apple-system, "PingFang SC", "SF Pro Text", sans-serif;
-        font-size: 16px;
+        font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        font-size: 15px;
         line-height: 1.75;
         color: var(--text);
         background: var(--bg);
         padding: 24px 32px;
-        max-width: 100%;
+        max-width: 780px;
     }
+
+    /* 标题层级 */
     h1, h2, h3, h4, h5, h6 {
         color: var(--heading);
-        margin-top: 1.4em;
-        margin-bottom: 0.6em;
-        font-weight: 600;
+        font-weight: 700;
         line-height: 1.3;
     }
-    h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
-    h3 { font-size: 1.25em; }
-    h4 { font-size: 1.1em; }
-    p { margin-bottom: 1em; white-space: pre-wrap; }
-    a { color: var(--link); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    strong { font-weight: 600; }
-    code {
-        font-family: "Menlo", "SF Mono", monospace;
-        font-size: 0.9em;
-        background: var(--code-bg);
-        color: var(--code-text);
-        padding: 0.15em 0.4em;
-        border-radius: 4px;
+    h1 {
+        font-size: 28px;
+        margin-top: 32px;
+        margin-bottom: 16px;
     }
-    pre {
+    h2 {
+        font-size: 22px;
+        margin-top: 28px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid #EEEEEE;
+        padding-bottom: 8px;
+    }
+    h3 {
+        font-size: 18px;
+        margin-top: 24px;
+        margin-bottom: 8px;
+    }
+    h4 {
+        font-size: 16px;
+        margin-top: 20px;
+        margin-bottom: 8px;
+    }
+
+    /* 段落 */
+    p {
+        margin-bottom: 14px;
+        white-space: pre-wrap;
+    }
+
+    /* 链接 */
+    a {
+        color: var(--link);
+        text-decoration: none;
+    }
+    a:hover {
+        text-decoration: underline;
+    }
+
+    /* 强调 */
+    strong {
+        font-weight: 700;
+        color: #1A1A1A;
+    }
+    em {
+        font-style: italic;
+    }
+    del {
+        text-decoration: line-through;
+        color: #999999;
+    }
+
+    /* 行内代码 */
+    code {
+        font-family: "Menlo", "Consolas", "Source Code Pro", monospace;
+        font-size: 14px;
         background: var(--code-bg);
+        color: var(--code-fg);
+        padding: 2px 6px;
+        border-radius: 3px;
+    }
+
+    /* 代码块 */
+    pre {
+        background: var(--codeblock-bg);
         padding: 16px;
-        border-radius: 8px;
+        border-radius: 4px;
+        border: 1px solid #E8E8E8;
         overflow-x: auto;
-        margin-bottom: 1em;
+        margin-bottom: 16px;
     }
     pre code {
         background: none;
         padding: 0;
-        font-size: 0.85em;
+        font-size: 13px;
         line-height: 1.5;
+        color: var(--text);
     }
+
+    /* 引用块 */
     blockquote {
-        border-left: 4px solid var(--blockquote-border);
-        padding: 0.5em 1em;
-        margin: 0 0 1em 0;
-        color: var(--blockquote-text);
+        border-left: 3px solid var(--blockquote-bar);
+        background: var(--blockquote-bg);
+        padding: 12px 16px;
+        margin: 16px 0;
+        color: #555555;
     }
-    ul, ol { padding-left: 2em; margin-bottom: 1em; }
-    li { margin-bottom: 0.3em; }
-    li input[type="checkbox"] { margin-right: 0.5em; }
+
+    /* 列表 */
+    ul, ol {
+        padding-left: 24px;
+        margin-bottom: 14px;
+    }
+    li {
+        margin-bottom: 4px;
+    }
+    li input[type="checkbox"] {
+        margin-right: 8px;
+    }
+    ul ul, ol ol, ul ol, ol ul {
+        margin-top: 4px;
+        padding-left: 20px;
+    }
+
+    /* 分隔线 */
     hr {
         border: none;
-        border-top: 1px solid var(--border);
-        margin: 1.5em 0;
+        border-top: 1px solid var(--hr);
+        margin: 24px 0;
     }
-    img { max-width: 100%; border-radius: 4px; }
+
+    /* 图片 */
+    img {
+        max-width: 100%;
+        border-radius: 4px;
+        margin: 16px 0;
+        display: block;
+    }
+
+    /* 表格 */
     table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 1em;
+        margin: 16px 0;
     }
     th, td {
-        border: 1px solid var(--border);
+        border: 1px solid var(--table-border);
         padding: 8px 12px;
         text-align: left;
     }
-    th { background: var(--code-bg); font-weight: 600; }
-    tr:nth-child(even) { background: var(--table-stripe); }
+    th {
+        background: var(--table-header);
+        font-weight: 600;
+        color: var(--heading);
+    }
+    tr:nth-child(even) {
+        background: #FAFAFA;
+    }
+
+    /* 高亮标记 */
+    mark {
+        background: var(--highlight-bg);
+        padding: 1px 4px;
+        border-radius: 2px;
+    }
     </style>
     </head>
     <body>
@@ -137,13 +217,11 @@ enum PreviewCSS {
                 return parseInt(elements[i].getAttribute('data-source-line'), 10);
             }
         }
-        // If no element has top >= 0, return the last one (scrolled past everything)
         if (elements.length > 0) {
             return parseInt(elements[elements.length - 1].getAttribute('data-source-line'), 10);
         }
         return 1;
     }
-    // Report scroll position to native side
     let scrollTimer = null;
     window.addEventListener('scroll', function() {
         if (window._isScrollingFromEditor) return;
