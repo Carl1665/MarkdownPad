@@ -49,7 +49,7 @@ struct PersistentSplitView: NSViewRepresentable {
         rightHost.widthAnchor.constraint(greaterThanOrEqualToConstant: rightMinWidth).isActive = true
 
         // Restore saved position after layout
-        DispatchQueue.main.async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             self.restorePosition(in: splitView)
         }
 

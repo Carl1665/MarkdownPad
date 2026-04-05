@@ -62,6 +62,7 @@ struct EditorView: NSViewRepresentable {
 
         textView.backgroundColor = theme.background
         textView.insertionPointColor = theme.text
+        textView.textColor = theme.text
         textView.font = theme.font
 
         // Set up line numbers ruler view
@@ -264,10 +265,12 @@ struct EditorView: NSViewRepresentable {
                 // Direct callback for preview update
                 parent.onTextChange?(newText)
 
-                // Syntax highlighting (delayed to avoid interfering with input method)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, let textStorage = textView.textStorage else { return }
-                    self.highlighter?.highlightParagraph(in: textStorage, editedRange: NSRange(location: 0, length: newText.count))
+                // Syntax highlighting — synchronous to avoid visual jitter.
+                // Uses cursor position as the edit center so only the current paragraph is re-highlighted.
+                if let textStorage = textView.textStorage {
+                    let cursorPos = textView.selectedRange().location
+                    let editHint = NSRange(location: cursorPos, length: 0)
+                    highlighter?.highlightParagraph(in: textStorage, editedRange: editHint)
                 }
             }
 

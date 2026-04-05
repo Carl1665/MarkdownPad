@@ -116,8 +116,12 @@ final class LineNumbersRulerView: NSRulerView {
             if y > rulerHeight { break }
 
             // Draw line number if within visible bounds
+            // Vertically center the line number text within the line fragment rect
             if y >= -lineRect.height {
-                let drawRect = NSRect(x: padding, y: y, width: bounds.width - padding * 2, height: lineRect.height)
+                // Calculate the actual text height and center it within the line rect
+                let textHeight = theme.font.boundingRectForFont.height
+                let verticalOffset = (lineRect.height - textHeight) / 2
+                let drawRect = NSRect(x: padding, y: y + verticalOffset, width: bounds.width - padding * 2, height: textHeight)
                 let lineNumStr = "\(lineNumber)"
                 lineNumStr.draw(in: drawRect, withAttributes: attrs)
             }

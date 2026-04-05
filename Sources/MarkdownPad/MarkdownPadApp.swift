@@ -111,6 +111,75 @@ struct MarkdownPadApp: App {
                 }
                 .keyboardShortcut("i", modifiers: .command)
 
+                Button("行内代码") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.inlineCode)
+                }
+                .keyboardShortcut("e", modifiers: .command)
+
+                Divider()
+
+                Button("标题 1") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.heading(1))
+                }
+                .keyboardShortcut("1", modifiers: [.command, .option])
+
+                Button("标题 2") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.heading(2))
+                }
+                .keyboardShortcut("2", modifiers: [.command, .option])
+
+                Button("标题 3") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.heading(3))
+                }
+                .keyboardShortcut("3", modifiers: [.command, .option])
+
+                Button("标题 4") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.heading(4))
+                }
+                .keyboardShortcut("4", modifiers: [.command, .option])
+
+                Divider()
+
+                Button("无序列表") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.unorderedList)
+                }
+                .keyboardShortcut("8", modifiers: [.command, .shift])
+
+                Button("有序列表") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.orderedList)
+                }
+                .keyboardShortcut("7", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("增加缩进") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.increaseIndent)
+                }
+                .keyboardShortcut("]", modifiers: .command)
+
+                Button("减少缩进") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.decreaseIndent)
+                }
+                .keyboardShortcut("[", modifiers: .command)
+
+                Divider()
+
+                Button("引用块") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.blockquote)
+                }
+                .keyboardShortcut(".", modifiers: [.command, .shift])
+
+                Button("代码块") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.codeBlock)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+
+                Button("分隔线") {
+                    NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.horizontalRule)
+                }
+
+                Divider()
+
                 Button("链接") {
                     NotificationCenter.default.post(name: .formatAction, object: ToolbarView.ToolbarAction.link)
                 }

@@ -8,6 +8,7 @@ struct TabBarView: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 1) {
+                    Spacer(minLength: 8)
                     ForEach(tabManager.documents) { doc in
                         TabItemView(
                             title: doc.displayName,

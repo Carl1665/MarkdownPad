@@ -79,6 +79,7 @@ struct ContentView: View {
     @State private var wordCount: Int = 0
     @State private var editorTextView: NSTextView?
     @State private var pendingCloseDoc: MarkdownDocument?  // 等待确认关闭的文档
+    @State private var windowCloseDelegate: WindowCloseDelegate?  // 窗口关闭代理
 
     var body: some View {
         VStack(spacing: 0) {
@@ -126,6 +127,17 @@ struct ContentView: View {
         .focusedSceneValue(\.activeTabManager, tabManager)
         .frame(minWidth: Constants.Window.minWidth, minHeight: Constants.Window.minHeight)
         .onAppear {
+            // 设置窗口关闭代理，拦截关闭时对未保存文档弹出确认
+            DispatchQueue.main.async {
+                if let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+                    let delegate = WindowCloseDelegate()
+                    delegate.tabManager = tabManager
+                    delegate.window = window
+                    window.delegate = delegate
+                    windowCloseDelegate = delegate
+                }
+            }
+
             if tabManager.documents.isEmpty {
                 // Check if first run
                 if !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.hasLaunchedBefore) {
@@ -165,6 +177,17 @@ struct ContentView: View {
             if let doc = notification.object as? MarkdownDocument {
                 pendingCloseDoc = doc
                 showSaveConfirmDialog(for: doc)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openFileFromDock)) { notification in
+            if let url = notification.object as? URL {
+                do {
+                    let doc = try MarkdownDocument.open(url: url)
+                    tabManager.addDocument(doc)
+                    RecentFilesManager.shared.addFile(url)
+                } catch {
+                    tabManager.showError(ErrorMessage.cannotOpenFile(url.lastPathComponent, error: error))
+                }
             }
         }
         .alert("错误", isPresented: Binding(
@@ -291,12 +314,18 @@ struct ContentView: View {
 
         switch action {
         case .bold:
-            let result = FormatInserter.wrapSelection(selectedText, with: "**")
+            let result = FormatInserter.wrapSelection(
+                selectedText, with: "**",
+                fullText: textView.string, selectedRange: selectedRange
+            )
             insertText = result.text
             newCursorOffset = result.selectionOffset
             newSelectionLength = result.selectionLength
         case .italic:
-            let result = FormatInserter.wrapSelection(selectedText, with: "*")
+            let result = FormatInserter.wrapSelection(
+                selectedText, with: "*",
+                fullText: textView.string, selectedRange: selectedRange
+            )
             insertText = result.text
             newCursorOffset = result.selectionOffset
             newSelectionLength = result.selectionLength
@@ -309,13 +338,25 @@ struct ContentView: View {
             doc.text = textView.string
             return
         case .unorderedList:
-            insertText = "\n- "
+            let result = FormatInserter.toggleLinePrefix("- ", in: textView.string, range: selectedRange)
+            applyLineEdit(result, textView: textView)
+            doc.text = textView.string
+            return
         case .orderedList:
-            insertText = "\n1. "
+            let result = FormatInserter.toggleOrderedList(in: textView.string, range: selectedRange)
+            applyLineEdit(result, textView: textView)
+            doc.text = textView.string
+            return
         case .taskList:
-            insertText = "\n- [ ] "
+            let result = FormatInserter.toggleLinePrefix("- [ ] ", in: textView.string, range: selectedRange)
+            applyLineEdit(result, textView: textView)
+            doc.text = textView.string
+            return
         case .blockquote:
-            insertText = "\n> "
+            let result = FormatInserter.toggleLinePrefix("> ", in: textView.string, range: selectedRange)
+            applyLineEdit(result, textView: textView)
+            doc.text = textView.string
+            return
         case .codeBlock:
             insertText = FormatInserter.insertCodeBlock(language: "")
         case .horizontalRule:
@@ -330,16 +371,74 @@ struct ContentView: View {
             insertText = FormatInserter.insertImage(alt: "描述", url: "image.png")
         case .table:
             insertText = "\n" + FormatInserter.insertTable(rows: 2, cols: 3)
+        case .inlineCode:
+            let result = FormatInserter.wrapSelection(
+                selectedText.isEmpty ? "代码" : selectedText,
+                with: "`",
+                fullText: textView.string, selectedRange: selectedRange
+            )
+            insertText = result.text
+            newCursorOffset = result.selectionOffset
+            newSelectionLength = result.selectionLength
+        case .increaseIndent:
+            let lineRange = (textView.string as NSString).lineRange(for: selectedRange)
+            let currentLine = (textView.string as NSString).substring(with: lineRange)
+            // Indent all selected lines
+            let lines = currentLine.components(separatedBy: "\n")
+            let indented = lines.map { "    " + $0 }.joined(separator: "\n")
+            textView.insertText(indented, replacementRange: lineRange)
+            doc.text = textView.string
+            return
+        case .decreaseIndent:
+            let lineRange = (textView.string as NSString).lineRange(for: selectedRange)
+            let currentLine = (textView.string as NSString).substring(with: lineRange)
+            let lines = currentLine.components(separatedBy: "\n")
+            let dedented = lines.map { line in
+                if line.hasPrefix("    ") {
+                    return String(line.dropFirst(4))
+                } else if line.hasPrefix("\t") {
+                    return String(line.dropFirst())
+                } else {
+                    return line
+                }
+            }.joined(separator: "\n")
+            textView.insertText(dedented, replacementRange: lineRange)
+            doc.text = textView.string
+            return
         }
 
-        textView.insertText(insertText, replacementRange: selectedRange)
+        // For wrap/unwrap: if offset is negative, we're unwrapping — expand the replacement range
+        var replacementRange = selectedRange
+        if newCursorOffset < 0 {
+            let wrapperLen = -newCursorOffset
+            replacementRange = NSRange(
+                location: selectedRange.location - wrapperLen,
+                length: selectedRange.length + wrapperLen * 2
+            )
+            newCursorOffset = 0
+        }
 
-        if newCursorOffset > 0 {
-            let newStart = selectedRange.location + newCursorOffset
+        textView.insertText(insertText, replacementRange: replacementRange)
+
+        if newCursorOffset > 0 || newSelectionLength > 0 {
+            let newStart = replacementRange.location + newCursorOffset
             textView.setSelectedRange(NSRange(location: newStart, length: newSelectionLength))
         }
 
         doc.text = textView.string
+    }
+
+    /// Apply a line-level edit by first selecting the full line range, then inserting replacement text.
+    /// This ensures the replacement starts at the beginning of the line, regardless of where the
+    /// user's original selection started.
+    private func applyLineEdit(
+        _ result: (newText: String, newRange: NSRange),
+        textView: NSTextView
+    ) {
+        // Step 1: Select the full line range so insertText replaces the correct span
+        textView.setSelectedRange(result.newRange)
+        // Step 2: Insert replaces the current selection
+        textView.insertText(result.newText)
     }
 }
 
@@ -425,6 +524,7 @@ extension Notification.Name {
     static let editorTextDidChange = Notification.Name("editorTextDidChange")
     static let requestCloseDocument = Notification.Name("requestCloseDocument")
     static let findAction = Notification.Name("findAction")
+    static let openFileFromDock = Notification.Name("openFileFromDock")
 }
 
 // MARK: - FocusedValues

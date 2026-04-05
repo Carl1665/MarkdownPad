@@ -52,6 +52,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitListItem(_ item: ListItem) -> String {
+        let line = sourceLine(item)
         let checkbox: String
         if let cb = item.checkbox {
             let checked = cb == .checked ? " checked disabled" : " disabled"
@@ -60,7 +61,7 @@ private struct HTMLVisitor: MarkupVisitor {
             checkbox = ""
         }
         let content = item.children.map { visit($0) }.joined()
-        return "<li>\(checkbox)\(content)</li>"
+        return "<li data-source-line=\"\(line)\">\(checkbox)\(content)</li>"
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {

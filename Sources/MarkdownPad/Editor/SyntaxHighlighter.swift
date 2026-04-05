@@ -7,14 +7,51 @@ final class SyntaxHighlighter {
         self.theme = theme
     }
 
-    /// Highlight the entire document
+    /// Highlight only the paragraph(s) around the edited range.
+    /// This avoids re-highlighting the entire document on every keystroke, preventing layout jitter.
     func highlightParagraph(in textStorage: NSTextStorage, editedRange: NSRange) {
         let string = textStorage.string as NSString
         let length = string.length
 
         guard length > 0 else { return }
 
-        applyHighlighting(in: textStorage, range: NSRange(location: 0, length: length))
+        // Expand to cover the full paragraph(s) affected by the edit.
+        // Find the nearest empty lines before and after the edit to determine paragraph boundaries.
+        let paragraphRange = paragraphRangeForEdit(in: string, editedRange: editedRange)
+        applyHighlighting(in: textStorage, range: paragraphRange)
+    }
+
+    /// Find the range of the paragraph(s) that need re-highlighting.
+    /// Expands from the edited range to the nearest blank lines on both sides.
+    private func paragraphRangeForEdit(in string: NSString, editedRange: NSRange) -> NSRange {
+        let length = string.length
+        guard length > 0 else { return editedRange }
+
+        // Expand backward to find start of paragraph (blank line or start of document)
+        var start = editedRange.location
+        while start > 0 {
+            let lineRange = string.lineRange(for: NSRange(location: start - 1, length: 0))
+            let line = string.substring(with: lineRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                start = lineRange.location + lineRange.length
+                break
+            }
+            start = lineRange.location
+            if start == 0 { break }
+        }
+
+        // Expand forward to find end of paragraph (blank line or end of document)
+        var end = NSMaxRange(editedRange)
+        while end < length {
+            let lineRange = string.lineRange(for: NSRange(location: end, length: 0))
+            let line = string.substring(with: lineRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                break
+            }
+            end = NSMaxRange(lineRange)
+        }
+
+        return NSRange(location: start, length: min(end - start, length - start))
     }
 
     // MARK: - Main Highlighting Pipeline
@@ -24,12 +61,14 @@ final class SyntaxHighlighter {
 
         guard range.location + range.length <= string.length else { return }
 
-        // Step 1: Reset to default style
-        let defaultAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.text,
-            .font: theme.font,
-        ]
-        textStorage.setAttributes(defaultAttrs, range: range)
+        // Batch ALL attribute changes in a single begin/endEditing to prevent
+        // multiple layout invalidations (the cause of keystroke jitter).
+        textStorage.beginEditing()
+        defer { textStorage.endEditing() }
+
+        // Step 1: Reset colors only — preserve existing fonts to prevent layout jitter.
+        textStorage.addAttribute(.foregroundColor, value: theme.text, range: range)
+        textStorage.removeAttribute(.backgroundColor, range: range)
 
         // Step 2: Find code block ranges (fenced ``` blocks with nesting support)
         // These are "protected zones" — no other highlighting enters them
@@ -40,6 +79,12 @@ final class SyntaxHighlighter {
                 .font: theme.codeFont,
                 .backgroundColor: theme.codeBackground
             ], range: codeRange)
+        }
+
+        // Step 2.5: JSON syntax highlighting inside ```json blocks
+        let jsonBlockRanges = findJSONCodeBlockRanges(in: string, range: range)
+        for jsonRange in jsonBlockRanges {
+            applyJSONHighlighting(in: textStorage, range: jsonRange)
         }
 
         // Step 3: Find heading line ranges
@@ -325,6 +370,93 @@ final class SyntaxHighlighter {
         }
 
         return result
+    }
+
+    // MARK: - JSON Syntax Highlighting
+
+    /// Find ```json ... ``` code block content ranges (excluding the fence lines).
+    private func findJSONCodeBlockRanges(in string: NSString, range: NSRange) -> [NSRange] {
+        var ranges: [NSRange] = []
+
+        guard let regex = try? NSRegularExpression(
+            pattern: #"```json\s*\n(.*?)```"#,
+            options: [.dotMatchesLineSeparators]
+        ) else {
+            return ranges
+        }
+
+        regex.enumerateMatches(in: string as String, options: [], range: range) { match, _, _ in
+            guard let match = match, match.numberOfRanges > 1 else { return }
+            let contentRange = match.range(at: 1)
+            guard contentRange.location != NSNotFound else { return }
+            ranges.append(contentRange)
+        }
+
+        return ranges
+    }
+
+    /// Apply JSON-specific syntax highlighting within a code block content range.
+    /// Colors reference VS Code Dark+ theme.
+    private func applyJSONHighlighting(in textStorage: NSTextStorage, range: NSRange) {
+        let string = textStorage.string as NSString
+
+        // JSON key: string followed by colon (before any whitespace/colon)
+        // Match "key": pattern and color the key string
+        if let keyRegex = try? NSRegularExpression(pattern: #"\"[^\"\\]*(?:\\.[^\"\\]*)*\"\s*:"#) {
+            keyRegex.enumerateMatches(in: string as String, options: [], range: range) { match, _, _ in
+                guard let match = match else { return }
+                // Color only the string part (group 0 minus the \s*: suffix)
+                let full = match.range
+                let str = string as String
+                let matched = str[(str.index(str.startIndex, offsetBy: full.location))..<(str.index(str.startIndex, offsetBy: full.location + full.length))]
+                // Find where the key string ends (before \s*:)
+                if let quoteEnd = matched.lastIndex(of: "\"") {
+                    let keyLen = matched.distance(from: matched.startIndex, to: quoteEnd) + 1
+                    let keyRange = NSRange(location: full.location, length: keyLen)
+                    textStorage.addAttributes([
+                        .foregroundColor: NSColor(hex: "#9CDCFE") ?? theme.code  // light blue
+                    ], range: keyRange)
+                }
+            }
+        }
+
+        // JSON string values: "..." (not preceded by a key pattern)
+        // We match all strings, then skip those already colored as keys
+        if let strRegex = try? NSRegularExpression(pattern: #"(?<!\\)\"(?:[^\"\\]|\\.)*\""#) {
+            strRegex.enumerateMatches(in: string as String, options: [], range: range) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                // Check if this string is already colored as a key
+                let existingColor = textStorage.attribute(.foregroundColor, at: matchRange.location, effectiveRange: nil) as? NSColor
+                let keyColor = NSColor(hex: "#9CDCFE")
+                if let existingColor = existingColor, let keyColor = keyColor,
+                   existingColor == keyColor {
+                    return
+                }
+                textStorage.addAttributes([
+                    .foregroundColor: NSColor(hex: "#CE9178") ?? theme.code  // orange
+                ], range: matchRange)
+            }
+        }
+
+        // JSON numbers: integers and floats (including negative and scientific notation)
+        if let numRegex = try? NSRegularExpression(pattern: #"(?<!\w)-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"#) {
+            numRegex.enumerateMatches(in: string as String, options: [], range: range) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: NSColor(hex: "#B5CEA8") ?? theme.code  // light green
+                ], range: matchRange)
+            }
+        }
+
+        // JSON booleans and null
+        if let kwRegex = try? NSRegularExpression(pattern: #"\b(true|false|null)\b"#) {
+            kwRegex.enumerateMatches(in: string as String, options: [], range: range) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                textStorage.addAttributes([
+                    .foregroundColor: NSColor(hex: "#569CD6") ?? theme.code  // blue
+                ], range: matchRange)
+            }
+        }
     }
 
     // MARK: - Helpers

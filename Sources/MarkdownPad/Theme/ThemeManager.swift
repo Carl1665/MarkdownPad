@@ -38,16 +38,16 @@ extension ThemeManager {
     /// 印象笔记 Markdown 编辑器深色主题
     /// 基于 https://evernote.com 截图逆向提取
     static let evernoteDarkEditor = EditorTheme(
-        background: NSColor(hex: "#2B2D30")!,      // 深炭灰
-        text: NSColor(hex: "#D4D4D4")!,            // 浅灰白
+        background: NSColor(hex: "#1F282C")!,      // 深青灰
+        text: NSColor(hex: "#8EBAB5")!,            // 青灰色
         heading: NSColor(hex: "#8EC86A")!,         // 亮草绿
         bold: NSColor(hex: "#D7BA7D")!,            // 金黄色
-        italic: NSColor(hex: "#D4D4D4")!,          // 默认色
+        italic: NSColor(hex: "#8EBAB5")!,          // 默认色
         code: NSColor(hex: "#CE9178")!,            // 暖橙色
-        codeBackground: NSColor(hex: "#1E1E1E")!,  // 更深灰
+        codeBackground: NSColor(hex: "#1A2024")!,  // 更深灰
         link: NSColor(hex: "#569CD6")!,            // 蓝色
         linkUrl: NSColor(hex: "#CE9178")!,         // 暖橙色
-        listMarker: NSColor(hex: "#D4D4D4")!,      // 默认色
+        listMarker: NSColor(hex: "#8EBAB5")!,      // 默认色
         blockquoteMarker: NSColor(hex: "#6A9955")!, // 暗绿色
         horizontalRule: NSColor(hex: "#E8853D")!,  // 橙红色
         tablePipe: NSColor(hex: "#808080")!,       // 灰色

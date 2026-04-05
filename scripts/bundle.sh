@@ -21,5 +21,10 @@ cp "$BUILD_DIR/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/"
 # Copy Info.plist
 cp "Resources/Info.plist" "$BUNDLE_DIR/Contents/"
 
+# Copy app icon
+if [ -f "build/AppIcon.icns" ]; then
+    cp "build/AppIcon.icns" "$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
+fi
+
 echo "Bundle created at: $BUNDLE_DIR"
 echo "Run with: open $BUNDLE_DIR"
