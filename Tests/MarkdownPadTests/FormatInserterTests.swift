@@ -1,30 +1,47 @@
 import Testing
+import Foundation
 @testable import MarkdownPad
 
 @Suite("FormatInserter Tests")
 struct FormatInserterTests {
 
     @Test func testWrapBold() {
-        let result = FormatInserter.wrapSelection("hello", with: "**")
+        let text = "hello"
+        let result = FormatInserter.wrapSelection(
+            text, with: "**",
+            fullText: text, selectedRange: NSRange(location: 0, length: 5)
+        )
         #expect(result.text == "**hello**")
         #expect(result.selectionOffset == 2)
         #expect(result.selectionLength == 5)
     }
 
     @Test func testWrapBoldNoSelection() {
-        let result = FormatInserter.wrapSelection("", with: "**")
+        let text = ""
+        let result = FormatInserter.wrapSelection(
+            text, with: "**",
+            fullText: text, selectedRange: NSRange(location: 0, length: 0)
+        )
         #expect(result.text == "****")
         #expect(result.selectionOffset == 2)
         #expect(result.selectionLength == 0)
     }
 
     @Test func testWrapItalic() {
-        let result = FormatInserter.wrapSelection("text", with: "*")
+        let text = "text"
+        let result = FormatInserter.wrapSelection(
+            text, with: "*",
+            fullText: text, selectedRange: NSRange(location: 0, length: 4)
+        )
         #expect(result.text == "*text*")
     }
 
     @Test func testWrapInlineCode() {
-        let result = FormatInserter.wrapSelection("code", with: "`")
+        let text = "code"
+        let result = FormatInserter.wrapSelection(
+            text, with: "`",
+            fullText: text, selectedRange: NSRange(location: 0, length: 4)
+        )
         #expect(result.text == "`code`")
     }
 

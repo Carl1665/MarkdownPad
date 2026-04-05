@@ -381,21 +381,32 @@ struct ContentView: View {
             newCursorOffset = result.selectionOffset
             newSelectionLength = result.selectionLength
         case .increaseIndent:
-            let lineRange = (textView.string as NSString).lineRange(for: selectedRange)
-            let currentLine = (textView.string as NSString).substring(with: lineRange)
-            // Indent all selected lines
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: selectedRange)
+            let currentLine = nsText.substring(with: lineRange)
             let lines = currentLine.components(separatedBy: "\n")
-            let indented = lines.map { "    " + $0 }.joined(separator: "\n")
+            // Use 2-space indent for list items (matches CommonMark sub-list alignment)
+            // 4-space indent would create indented code blocks instead of nested lists
+            let isInsideList = lines.contains { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("+ ") ||
+                    trimmed.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil
+            }
+            let indent = isInsideList ? "  " : "    "
+            let indented = lines.map { indent + $0 }.joined(separator: "\n")
             textView.insertText(indented, replacementRange: lineRange)
             doc.text = textView.string
             return
         case .decreaseIndent:
-            let lineRange = (textView.string as NSString).lineRange(for: selectedRange)
-            let currentLine = (textView.string as NSString).substring(with: lineRange)
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: selectedRange)
+            let currentLine = nsText.substring(with: lineRange)
             let lines = currentLine.components(separatedBy: "\n")
             let dedented = lines.map { line in
                 if line.hasPrefix("    ") {
                     return String(line.dropFirst(4))
+                } else if line.hasPrefix("  ") {
+                    return String(line.dropFirst(2))
                 } else if line.hasPrefix("\t") {
                     return String(line.dropFirst())
                 } else {
@@ -491,6 +502,10 @@ struct EditorPreviewPair: View {
             rightMinWidth: 300
         )
         .onAppear {
+            updatePreview(text: doc.text)
+        }
+        .onChange(of: doc.id) { _, _ in
+            // 文档切换时刷新预览
             updatePreview(text: doc.text)
         }
         .onReceive(NotificationCenter.default.publisher(for: .editorTextDidChange)) { notification in

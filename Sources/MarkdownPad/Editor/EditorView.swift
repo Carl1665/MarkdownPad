@@ -36,6 +36,7 @@ struct EditorView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        scrollView.horizontalScrollElasticity = .none
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
         scrollView.documentView = textView
@@ -129,12 +130,24 @@ struct EditorView: NSViewRepresentable {
         let hasMarkedText = textView.hasMarkedText()
         if textView.string != text && !context.coordinator.isUpdating && !hasMarkedText {
             context.coordinator.isUpdating = true
-            textView.string = text
-            context.coordinator.highlighter?.highlightParagraph(
-                in: textView.textStorage!,
-                editedRange: NSRange(location: 0, length: (text as NSString).length)
-            )
-            context.coordinator.isUpdating = false
+            let capturedText = text
+            // Defer to next runloop to avoid modifying textStorage during a draw cycle
+            DispatchQueue.main.async {
+                // Use textStorage to update content safely, avoiding crashes during draw cycles
+                if let textStorage = textView.textStorage {
+                    let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: fullRange, with: capturedText)
+                    textStorage.endEditing()
+                }
+                context.coordinator.highlighter?.highlightParagraph(
+                    in: textView.textStorage!,
+                    editedRange: NSRange(location: 0, length: (capturedText as NSString).length)
+                )
+                context.coordinator.isUpdating = false
+                // Trigger line numbers redraw when text changes externally (e.g. document switch)
+                context.coordinator.lineNumbersView?.needsDisplay = true
+            }
         }
 
         // Apply theme colors (these don't affect text attributes)
@@ -181,6 +194,9 @@ struct EditorView: NSViewRepresentable {
             let targetY = lineRect.origin.y
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
             scrollView.reflectScrolledClipView(scrollView.contentView)
+            // reflectScrolledClipView triggers tile() which may set bounds.origin.x != 0
+            // when a vertical ruler is present. Force x back to 0.
+            scrollView.contentView.bounds.origin.x = 0
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 context.coordinator.isScrollingFromCode = false
             }
@@ -217,11 +233,13 @@ struct EditorView: NSViewRepresentable {
         }
 
         @MainActor @objc func scrollViewDidScroll(_ notification: Notification) {
-            guard !isScrollingFromCode else { return }
             guard let clipView = notification.object as? NSClipView,
                   let textView = textView,
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer else { return }
+
+            // Don't report scroll position during programmatic scrolling
+            guard !isScrollingFromCode else { return }
 
             // Find the character index at the top of the visible rect
             let visibleY = clipView.bounds.origin.y
@@ -229,7 +247,6 @@ struct EditorView: NSViewRepresentable {
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
             // Count newlines up to charIndex to determine line number (1-based)
-            // Optimized: count newlines directly instead of creating an array
             let string = textView.string as NSString
             let safeIndex = min(charIndex, string.length)
             var lineCount = 1
@@ -265,12 +282,10 @@ struct EditorView: NSViewRepresentable {
                 // Direct callback for preview update
                 parent.onTextChange?(newText)
 
-                // Syntax highlighting — synchronous to avoid visual jitter.
-                // Uses cursor position as the edit center so only the current paragraph is re-highlighted.
+                // Syntax highlighting — re-highlight full document to ensure consistency.
                 if let textStorage = textView.textStorage {
-                    let cursorPos = textView.selectedRange().location
-                    let editHint = NSRange(location: cursorPos, length: 0)
-                    highlighter?.highlightParagraph(in: textStorage, editedRange: editHint)
+                    let fullRange = NSRange(location: 0, length: (newText as NSString).length)
+                    highlighter?.highlightParagraph(in: textStorage, editedRange: fullRange)
                 }
             }
 
