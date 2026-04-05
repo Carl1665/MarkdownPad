@@ -41,7 +41,7 @@ Tests/MarkdownPadTests/       # 单元测试
 | 文件 | 职责 |
 |------|------|
 | `MarkdownPadApp.swift` | 应用入口，定义菜单命令（新建/打开/保存/关闭标签页/查找/格式化快捷键） |
-| `AppDelegate.swift` | 窗口生命周期管理，禁止关闭最后窗口时自动退出 |
+| `AppDelegate.swift` | 窗口生命周期管理，禁止关闭最后窗口时自动退出，Dock 文件拖拽打开，窗口关闭时未保存文档确认 |
 | `ContentView.swift` | 主视图容器，协调 TabBar/Toolbar/Editor/Preview/StatusBar，处理工具栏动作和文件拖放 |
 
 ### 编辑器模块 (`Editor/`)
@@ -49,8 +49,8 @@ Tests/MarkdownPadTests/       # 单元测试
 | 文件 | 职责 |
 |------|------|
 | `EditorView.swift` | NSTextView 的 SwiftUI 包装，处理文本编辑、滚动事件、光标位置追踪、输入法兼容 |
-| `SyntaxHighlighter.swift` | Markdown 语法高亮引擎，支持代码块/标题/加粗/斜体/链接/列表/引用等 |
-| `FormatInserter.swift` | 格式化插入工具类，生成加粗/斜体/链接/表格/代码块等 Markdown 标记 |
+| `SyntaxHighlighter.swift` | Markdown 语法高亮引擎，支持代码块/标题/加粗/斜体/链接/列表/引用等，JSON 代码块语法高亮 |
+| `FormatInserter.swift` | 格式化插入工具类，支持加粗/斜体/行内代码的 toggle wrap/unwrap，多行列表/引用前缀切换 |
 | `LineNumbersRulerView.swift` | 自定义 NSRulerView，显示行号，随滚动更新 |
 
 ### 预览模块 (`Preview/`)
@@ -79,7 +79,7 @@ Tests/MarkdownPadTests/       # 单元测试
 | 文件 | 职责 |
 |------|------|
 | `TabBarView.swift` | 标签栏，显示文档标签、新建按钮、关闭确认对话框 |
-| `ToolbarView.swift` | 工具栏，提供格式化按钮（加粗/斜体/标题/列表/链接/表格等） |
+| `ToolbarView.swift` | 工具栏，提供格式化按钮（加粗/斜体/标题/列表/链接/表格等），自定义 Popover 标题菜单，NoHighlightButtonStyle，TooltipManager 即时提示 |
 | `StatusBarView.swift` | 状态栏，显示文档名/光标位置/字数/编码 |
 | `PersistentSplitView.swift` | 分割视图，记住分隔线位置（持久化到 UserDefaults） |
 
@@ -143,6 +143,7 @@ PreviewView (WKWebView) 更新内容
 
 ### 修改语法高亮规则
 - 编辑 `SyntaxHighlighter.swift` 的 `buildLinePatterns()` 或 `buildInlinePatterns()`
+- 代码块语言高亮（如 JSON）：编辑 `findJSONCodeBlockRanges()` 和 `applyJSONHighlighting()`
 
 ### 修改预览样式
 - 编辑 `PreviewCSS.swift` 的 CSS 变量和样式规则
